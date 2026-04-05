@@ -3,74 +3,66 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 
 export default async function handler(req, res) {
     const { targetUrl } = req.query;
-
-    if (!targetUrl) {
-        return res.status(400).json({ error: "URL alvo é obrigatória" });
-    }
-
     const proxyUrl = process.env.PROXY_URL; 
     const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : null;
 
+    const commonHeaders = {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1',
+        'Accept': '*/*',
+        'Referer': 'https://google.com'
+    };
+
     try {
-        const response = await axios.get(targetUrl, {
-            httpAgent: agent,
-            httpsAgent: agent,
-            timeout: 15000,
-            headers: {
-                // User-Agent de Android costuma "puxar" o m3u8 mais fácil que o de PC
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36',
-                'Referer': targetUrl,
-                'Accept': '*/*'
-            }
+        // PASSO 1: Acessar a página inicial para achar o IFRAME ou o PLAYER
+        const step1 = await axios.get(targetUrl, { 
+            httpAgent: agent, httpsAgent: agent, 
+            headers: commonHeaders, timeout: 10000 
         });
+        
+        let content = step1.data;
+        let finalM3U8 = null;
 
-        const html = response.data;
-        let foundLinks = [];
+        // Regex para achar links m3u8 ou links de iframes que podem conter o vídeo
+        const m3u8Regex = /(https?:\/\/[^"']+\.m3u8[^"']*)/gi;
+        const iframeRegex = /src=["']((https?:)?\/\/embed[^"']+)["']/i;
 
-        // 1. Procura direta por .m3u8
-        const regexM3U8 = /(https?:\/\/[^"']+\.m3u8[^"']*)/gi;
-        const matchesM3U8 = html.match(regexM3U8);
-        if (matchesM3U8) foundLinks.push(...matchesM3U8);
+        let matches = content.match(m3u8Regex);
 
-        // 2. Procura por links de "playlist" (comum em alguns players)
-        const regexPlaylist = /(https?:\/\/[^"']+\/playlist[^"']*)/gi;
-        const matchesPlaylist = html.match(regexPlaylist);
-        if (matchesPlaylist) foundLinks.push(...matchesPlaylist);
+        if (matches) {
+            finalM3U8 = matches[0];
+        } else {
+            // PASSO 2: Se não achou o m3u8, procura o link do IFRAME do player
+            const iframeMatch = content.match(iframeRegex);
+            if (iframeMatch) {
+                let iframeUrl = iframeMatch[1];
+                if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
 
-        // 3. Procura por links codificados em Base64 (O "pulo do gato")
-        const base64Regex = /["'](aHR0c[a-zA-Z0-9+/]+={0,2})["']/g;
-        let b64Match;
-        while ((b64Match = base64Regex.exec(html)) !== null) {
-            try {
-                const decoded = Buffer.from(b64Match[1], 'base64').toString('utf-8');
-                if (decoded.includes('.m3u8')) foundLinks.push(decoded);
-            } catch (e) {}
+                // Entra no link do player para "snifar" lá dentro
+                const step2 = await axios.get(iframeUrl, { 
+                    httpAgent: agent, httpsAgent: agent, 
+                    headers: { ...commonHeaders, 'Referer': targetUrl }, 
+                    timeout: 10000 
+                });
+                
+                const matchesStep2 = step2.data.match(m3u8Regex);
+                if (matchesStep2) finalM3U8 = matchesStep2[0];
+            }
         }
 
-        if (foundLinks.length > 0) {
-            const uniqueLinks = [...new Set(foundLinks)];
-            const origin = new URL(targetUrl).origin;
-
+        if (finalM3U8) {
             return res.status(200).json({
                 success: true,
-                stream_url: uniqueLinks[0],
-                all_links: uniqueLinks,
-                origin_referer: targetUrl,
-                origin_domain: origin
+                stream_url: finalM3U8,
+                origin_referer: targetUrl
             });
         }
 
-        // Se falhar, retorna um pequeno pedaço do código para você analisar o que o site mandou
         return res.status(404).json({ 
             success: false, 
-            message: "Link não encontrado. O site pode estar usando proteção pesada.",
-            preview: html.substring(0, 300).replace(/<[^>]*>/g, '') 
+            message: "Link protegido ou dinâmico. O site exige um navegador real para gerar o token."
         });
 
     } catch (error) {
-        return res.status(500).json({ 
-            success: false, 
-            error: "Erro de conexão. Verifique se o seu PROXY_URL está correto na Vercel." 
-        });
+        return res.status(500).json({ success: false, error: "Erro ao acessar o site. O Proxy pode estar sendo bloqueado." });
     }
 }
