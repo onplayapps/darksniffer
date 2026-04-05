@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Sniffer Pro - DragonTV</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-6">
+    <div class="max-w-2xl mx-auto bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-700">
+        <h1 class="text-2xl font-bold mb-6 text-blue-400"><i class="fas fa-search-location mr-2"></i> Capturar Link & Origem</h1>
+        
+        <input type="text" id="urlInput" placeholder="URL do site de streaming..." 
+            class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 mb-4 outline-none focus:border-blue-500">
+        
+        <button onclick="fazerSniffing()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg font-bold transition">
+            Capturar agora
+        </button>
+
+        <div id="result" class="hidden mt-8 space-y-4">
+            <div class="p-4 bg-slate-900 rounded-lg border border-emerald-500/50">
+                <label class="text-xs text-slate-500 font-bold uppercase">Link m3u8:</label>
+                <p id="resLink" class="text-blue-300 break-all text-sm mb-4"></p>
+                
+                <label class="text-xs text-slate-500 font-bold uppercase">Origem (Referer):</label>
+                <p id="resOrigin" class="text-emerald-300 break-all text-sm"></p>
+            </div>
+            <p class="text-xs text-center text-slate-500 italic">Use esses dados no seu painel Baserow.</p>
+        </div>
+    </div>
+
+    <script>
+        async function fazerSniffing() {
+            const url = document.getElementById('urlInput').value;
+            const btn = document.getElementById('btn');
+            const resultDiv = document.getElementById('result');
+            if(!url) return alert("Insira uma URL");
+
+            btn.disabled = true;
+            btn.innerText = "Capturando...";
+            resultDiv.classList.add('hidden');
+
+            try {
+                // Chama a API que você criou na pasta /api
+                const res = await fetch(`/api/sniffer?targetUrl=${encodeURIComponent(url)}`);
+                const data = await res.json();
+
+                if(data.success) {
+                    document.getElementById('resLink').innerText = data.stream_url;
+                    document.getElementById('resOrigin').innerText = data.origin_referer;
+                    resultDiv.classList.remove('hidden');
+                } else {
+                    alert("Link não encontrado: " + data.message);
+                }
+            } catch (e) {
+                alert("Erro ao conectar com a API.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Capturar agora";
+            }
+        }
+    </script>
+</body>
+</html>
