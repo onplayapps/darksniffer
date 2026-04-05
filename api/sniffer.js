@@ -7,64 +7,60 @@ export default async function handler(req, res) {
     const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : null;
 
     const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': targetUrl,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Upgrade-Insecure-Requests': '1'
+        'Accept': '*/*'
     };
 
     try {
-        // Busca o HTML da página
         const response = await axios.get(targetUrl, { 
-            httpAgent: agent, 
-            httpsAgent: agent, 
-            headers, 
-            timeout: 12000 
+            httpAgent: agent, httpsAgent: agent, headers, timeout: 15000 
         });
 
         let html = response.data;
-        let linksEncontrados = [];
+        let foundLinks = [];
 
-        // 1. Procura padrão M3U8 padrão
-        const regM3U8 = /(https?:\/\/[^"']+\.m3u8[^"']*)/gi;
-        const m1 = html.match(regM3U8);
-        if (m1) linksEncontrados.push(...m1);
-
-        // 2. Procura links dentro de Atob (Base64) que sites de embed usam muito
-        const regB64 = /atob\(["']([a-zA-Z0-9+/=]+)["']\)/g;
-        let b64Match;
-        while ((b64Match = regB64.exec(html)) !== null) {
-            try {
-                let decoded = Buffer.from(b64Match[1], 'base64').toString();
-                if (decoded.includes('http')) linksEncontrados.push(decoded);
-            } catch(e){}
+        // 1. TENTA DESEMPACOTAR JS (P.A.C.K.E.R)
+        // Muitos sites PHP usam eval(function(p,a,c,k,e,d)...)
+        if (html.includes('eval(function(p,a,c,k,e,d)')) {
+            const packerRegex = /eval\(function\(p,a,c,k,e,d\).+?\.split\(['"]\|['"]\)\)\)/g;
+            const packed = html.match(packerRegex);
+            if (packed) {
+                // Aqui simulamos o unpacker básico procurando por strings de URL dentro do bloco
+                const urlInPacker = /https?:\/\/[^"']+\.m3u8[^"']*/gi;
+                const matches = html.match(urlInPacker);
+                if (matches) foundLinks.push(...matches);
+            }
         }
 
-        // 3. Procura por variáveis de Player (Ex: source: "...", file: "...")
-        const regVars = /(?:file|source|src|url)["']?\s*[:=]\s*["']([^"']+\.(?:m3u8|mp4|ts)[^"']*)["']/gi;
-        let varMatch;
-        while ((varMatch = regVars.exec(html)) !== null) {
-            linksEncontrados.push(varMatch[1]);
+        // 2. BUSCA POR HEXADECIMAL OU UNICODE (\x68\x74\x74\x70...)
+        // Links em PHP as vezes são injetados assim para enganar sniffers
+        const hexRegex = /\\x[0-9a-fA-F]{2}/g;
+        if (hexRegex.test(html)) {
+            const decodedHex = html.replace(/\\x([0-9a-fA-F]{2})/g, (match, p1) => String.fromCharCode(parseInt(p1, 16)));
+            const m3u8InHex = decodedHex.match(/https?:\/\/[^"']+\.m3u8[^"']*/gi);
+            if (m3u8InHex) foundLinks.push(...m3u8InHex);
         }
 
-        if (linksEncontrados.length > 0) {
-            // Filtra apenas o que parece ser o link real do vídeo
-            const linkReal = linksEncontrados.find(l => l.includes('.m3u8')) || linksEncontrados[0];
-            
+        // 3. BUSCA PADRÃO CLÁSSICO (Caso a criptografia tenha falhado em esconder tudo)
+        const classic = html.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/gi);
+        if (classic) foundLinks.push(...classic);
+
+        if (foundLinks.length > 0) {
+            const cleanLink = [...new Set(foundLinks)][0];
             return res.status(200).json({
                 success: true,
-                stream_url: linkReal.startsWith('//') ? 'https:' + linkReal : linkReal,
-                origin_referer: targetUrl
+                stream_url: cleanLink.replace(/\\/g, ''), // Limpa barras invertidas de escape
+                origin: targetUrl
             });
         }
 
-        // Se falhar, o site provavelmente exige um navegador real (Puppeteer)
         return res.status(404).json({ 
             success: false, 
-            message: "O site usa proteção contra Sniffers simples. O link é gerado apenas no navegador."
+            message: "Link em PHP com criptografia avançada. Requer processamento de navegador (Puppeteer)."
         });
 
     } catch (error) {
-        return res.status(500).json({ success: false, error: "O site bloqueou a conexão do servidor Vercel." });
+        return res.status(500).json({ success: false, error: "Erro ao acessar o arquivo PHP." });
     }
-                }
+}
