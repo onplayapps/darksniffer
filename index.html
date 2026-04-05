@@ -2,63 +2,141 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Sniffer Pro - DragonTV</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sniffer Pro | DragonTV</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); }
+    </style>
 </head>
-<body class="bg-slate-900 text-white min-h-screen p-6">
-    <div class="max-w-2xl mx-auto bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-700">
-        <h1 class="text-2xl font-bold mb-6 text-blue-400"><i class="fas fa-search-location mr-2"></i> Capturar Link & Origem</h1>
-        
-        <input type="text" id="urlInput" placeholder="URL do site de streaming..." 
-            class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 mb-4 outline-none focus:border-blue-500">
-        
-        <button onclick="fazerSniffing()" id="btn" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg font-bold transition">
-            Capturar agora
-        </button>
+<body class="bg-slate-950 text-slate-200 min-h-screen flex flex-col items-center p-4 sm:p-8">
 
-        <div id="result" class="hidden mt-8 space-y-4">
-            <div class="p-4 bg-slate-900 rounded-lg border border-emerald-500/50">
-                <label class="text-xs text-slate-500 font-bold uppercase">Link m3u8:</label>
-                <p id="resLink" class="text-blue-300 break-all text-sm mb-4"></p>
-                
-                <label class="text-xs text-slate-500 font-bold uppercase">Origem (Referer):</label>
-                <p id="resOrigin" class="text-emerald-300 break-all text-sm"></p>
-            </div>
-            <p class="text-xs text-center text-slate-500 italic">Use esses dados no seu painel Baserow.</p>
+    <header class="w-full max-w-3xl text-center mb-10">
+        <div class="inline-block p-3 bg-blue-600/20 rounded-2xl mb-4 border border-blue-500/30">
+            <i class="fas fa-satellite-dish text-3xl text-blue-500"></i>
         </div>
-    </div>
+        <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
+            Link <span class="text-blue-500">Sniffer</span> Pro
+        </h1>
+        <p class="text-slate-400 mt-2 text-sm sm:text-base">Extraia fluxos m3u8 e metadados de origem em tempo real.</p>
+    </header>
+
+    <main class="w-full max-w-3xl space-y-6">
+        
+        <section class="glass border border-slate-700/50 rounded-3xl p-6 shadow-2xl">
+            <div class="flex flex-col gap-4">
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500">
+                        <i class="fas fa-link"></i>
+                    </span>
+                    <input type="text" id="urlInput" placeholder="Cole a URL do site de streaming aqui..." 
+                        class="w-full bg-slate-900/80 border border-slate-600 rounded-2xl py-4 pl-12 pr-4 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm sm:text-base">
+                </div>
+                
+                <button onclick="fazerSniffing()" id="btn" class="group relative w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] flex items-center justify-center gap-3 overflow-hidden">
+                    <span id="btnText">Iniciar Captura</span>
+                    <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                    <div id="loader" class="hidden animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                </button>
+            </div>
+        </section>
+
+        <section id="result" class="hidden animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-4">
+            <div class="glass border border-emerald-500/30 rounded-3xl p-6 shadow-lg">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="h-10 w-10 bg-emerald-500/20 rounded-full flex items-center justify-center text-emerald-500">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <h3 class="font-bold text-lg text-emerald-400 text-sm sm:text-base">Link Encontrado com Sucesso!</h3>
+                </div>
+
+                <div class="mb-5">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 block mb-2">Stream URL (.m3u8)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="resLink" readonly class="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3 text-blue-400 text-xs sm:text-sm font-mono truncate">
+                        <button onclick="copyToClipboard('resLink')" class="bg-slate-700 hover:bg-slate-600 px-4 rounded-xl transition"><i class="far fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 block mb-2">Origem Original (Referer)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="resOrigin" readonly class="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-400 text-xs sm:text-sm font-mono truncate">
+                        <button onclick="copyToClipboard('resOrigin')" class="bg-slate-700 hover:bg-slate-600 px-4 rounded-xl transition"><i class="far fa-copy"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 bg-blue-900/20 border border-blue-500/20 rounded-2xl flex items-center gap-3">
+                <i class="fas fa-info-circle text-blue-500"></i>
+                <p class="text-[11px] sm:text-xs text-blue-300">Dica: Use estes dados no seu painel <strong>Baserow</strong> para alimentar o app <strong>DragonTV</strong>.</p>
+            </div>
+        </section>
+
+        <section id="errorArea" class="hidden p-6 bg-red-900/20 border border-red-500/30 rounded-3xl text-center">
+            <i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-3"></i>
+            <p id="errorMsg" class="text-red-400 text-sm"></p>
+        </section>
+
+    </main>
+
+    <footer class="mt-auto py-8 text-slate-600 text-xs text-center">
+        &copy; 2026 DragonTV System - Desenvolvido para Vercel
+    </footer>
 
     <script>
         async function fazerSniffing() {
-            const url = document.getElementById('urlInput').value;
+            const urlInput = document.getElementById('urlInput');
             const btn = document.getElementById('btn');
+            const btnText = document.getElementById('btnText');
+            const loader = document.getElementById('loader');
             const resultDiv = document.getElementById('result');
-            if(!url) return alert("Insira uma URL");
+            const errorArea = document.getElementById('errorArea');
+            
+            if(!urlInput.value) return alert("Por favor, cole uma URL válida.");
 
+            // UI State - Loading
             btn.disabled = true;
-            btn.innerText = "Capturando...";
+            btnText.classList.add('hidden');
+            loader.classList.remove('hidden');
             resultDiv.classList.add('hidden');
+            errorArea.classList.add('hidden');
 
             try {
-                // Chama a API que você criou na pasta /api
-                const res = await fetch(`/api/sniffer?targetUrl=${encodeURIComponent(url)}`);
-                const data = await res.json();
+                const response = await fetch(`/api/sniffer?targetUrl=${encodeURIComponent(urlInput.value)}`);
+                const data = await response.json();
 
                 if(data.success) {
-                    document.getElementById('resLink').innerText = data.stream_url;
-                    document.getElementById('resOrigin').innerText = data.origin_referer;
+                    document.getElementById('resLink').value = data.stream_url;
+                    document.getElementById('resOrigin').value = data.origin_referer;
                     resultDiv.classList.remove('hidden');
                 } else {
-                    alert("Link não encontrado: " + data.message);
+                    document.getElementById('errorMsg').innerText = data.message || "Link não encontrado neste site.";
+                    errorArea.classList.remove('hidden');
                 }
             } catch (e) {
-                alert("Erro ao conectar com a API.");
+                document.getElementById('errorMsg').innerText = "Erro ao conectar com o servidor da Vercel.";
+                errorArea.classList.remove('hidden');
             } finally {
                 btn.disabled = false;
-                btn.innerText = "Capturar agora";
+                btnText.classList.remove('hidden');
+                loader.classList.add('hidden');
             }
+        }
+
+        function copyToClipboard(id) {
+            const input = document.getElementById(id);
+            input.select();
+            document.execCommand('copy');
+            // Feedback simples
+            const originalValue = input.value;
+            input.value = "Copiado!";
+            setTimeout(() => input.value = originalValue, 1000);
         }
     </script>
 </body>
-</html>
+                </html>
+                
