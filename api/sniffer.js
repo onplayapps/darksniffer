@@ -6,63 +6,65 @@ export default async function handler(req, res) {
     const proxyUrl = process.env.PROXY_URL; 
     const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : null;
 
-    const commonHeaders = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1',
-        'Accept': '*/*',
-        'Referer': 'https://google.com'
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Referer': targetUrl,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Upgrade-Insecure-Requests': '1'
     };
 
     try {
-        // PASSO 1: Acessar a página inicial para achar o IFRAME ou o PLAYER
-        const step1 = await axios.get(targetUrl, { 
-            httpAgent: agent, httpsAgent: agent, 
-            headers: commonHeaders, timeout: 10000 
+        // Busca o HTML da página
+        const response = await axios.get(targetUrl, { 
+            httpAgent: agent, 
+            httpsAgent: agent, 
+            headers, 
+            timeout: 12000 
         });
-        
-        let content = step1.data;
-        let finalM3U8 = null;
 
-        // Regex para achar links m3u8 ou links de iframes que podem conter o vídeo
-        const m3u8Regex = /(https?:\/\/[^"']+\.m3u8[^"']*)/gi;
-        const iframeRegex = /src=["']((https?:)?\/\/embed[^"']+)["']/i;
+        let html = response.data;
+        let linksEncontrados = [];
 
-        let matches = content.match(m3u8Regex);
+        // 1. Procura padrão M3U8 padrão
+        const regM3U8 = /(https?:\/\/[^"']+\.m3u8[^"']*)/gi;
+        const m1 = html.match(regM3U8);
+        if (m1) linksEncontrados.push(...m1);
 
-        if (matches) {
-            finalM3U8 = matches[0];
-        } else {
-            // PASSO 2: Se não achou o m3u8, procura o link do IFRAME do player
-            const iframeMatch = content.match(iframeRegex);
-            if (iframeMatch) {
-                let iframeUrl = iframeMatch[1];
-                if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
-
-                // Entra no link do player para "snifar" lá dentro
-                const step2 = await axios.get(iframeUrl, { 
-                    httpAgent: agent, httpsAgent: agent, 
-                    headers: { ...commonHeaders, 'Referer': targetUrl }, 
-                    timeout: 10000 
-                });
-                
-                const matchesStep2 = step2.data.match(m3u8Regex);
-                if (matchesStep2) finalM3U8 = matchesStep2[0];
-            }
+        // 2. Procura links dentro de Atob (Base64) que sites de embed usam muito
+        const regB64 = /atob\(["']([a-zA-Z0-9+/=]+)["']\)/g;
+        let b64Match;
+        while ((b64Match = regB64.exec(html)) !== null) {
+            try {
+                let decoded = Buffer.from(b64Match[1], 'base64').toString();
+                if (decoded.includes('http')) linksEncontrados.push(decoded);
+            } catch(e){}
         }
 
-        if (finalM3U8) {
+        // 3. Procura por variáveis de Player (Ex: source: "...", file: "...")
+        const regVars = /(?:file|source|src|url)["']?\s*[:=]\s*["']([^"']+\.(?:m3u8|mp4|ts)[^"']*)["']/gi;
+        let varMatch;
+        while ((varMatch = regVars.exec(html)) !== null) {
+            linksEncontrados.push(varMatch[1]);
+        }
+
+        if (linksEncontrados.length > 0) {
+            // Filtra apenas o que parece ser o link real do vídeo
+            const linkReal = linksEncontrados.find(l => l.includes('.m3u8')) || linksEncontrados[0];
+            
             return res.status(200).json({
                 success: true,
-                stream_url: finalM3U8,
+                stream_url: linkReal.startsWith('//') ? 'https:' + linkReal : linkReal,
                 origin_referer: targetUrl
             });
         }
 
+        // Se falhar, o site provavelmente exige um navegador real (Puppeteer)
         return res.status(404).json({ 
             success: false, 
-            message: "Link protegido ou dinâmico. O site exige um navegador real para gerar o token."
+            message: "O site usa proteção contra Sniffers simples. O link é gerado apenas no navegador."
         });
 
     } catch (error) {
-        return res.status(500).json({ success: false, error: "Erro ao acessar o site. O Proxy pode estar sendo bloqueado." });
+        return res.status(500).json({ success: false, error: "O site bloqueou a conexão do servidor Vercel." });
     }
-}
+                }
